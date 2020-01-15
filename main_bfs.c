@@ -1,4 +1,4 @@
-#include "graph.c"
+#include "graph_bfs.c"
 #include <mpi.h>
 #include <time.h>
 
@@ -7,7 +7,7 @@ void partGraph(GraphStruct *G_graph,int num_procs){
 	int i;
 	// int num_procs = 3;
 	// MPI_Comm_size(comm, &num_procs);
-	for(i=0; i<G_graph->numVtxs; i++){
+	for(i=0; i<G_graph->numVtxs; i++){	// chia cac canh vao cac process 
 		int part = G_graph->vtxGIDs[i] % num_procs;
 		G_graph->part[i] = part;
 	}
@@ -194,7 +194,7 @@ int* BFS(MPI_Comm comm, GraphStruct L_graph, int srcLid, int srcRank,int num_pro
 	int i, j;
 	int myRank;
 	MPI_Comm_rank(comm, &myRank);
-	/**************Compute the mapping of vertex GID to vertex lid*****************/
+	 
 	int totalVtx;
 	MPI_Allreduce(&(L_graph.numVtxs), &totalVtx, 1, MPI_INT, MPI_SUM, comm);
 	int *gid2lid = (int *) calloc(sizeof(int), totalVtx);
@@ -203,7 +203,7 @@ int* BFS(MPI_Comm comm, GraphStruct L_graph, int srcLid, int srcRank,int num_pro
 		gid2lid[gid] = i;
 	}
 
-	/*******Initialize sending and receiving buffer********/
+	
 	int *recvCount = (int *) malloc(sizeof(int) * num_procs);
 	int **recvBuf = (int **) malloc(sizeof(int *) * num_procs);
 	ArrayList_t **sendBuf = (ArrayList_t **) malloc(sizeof(ArrayList_t *) * num_procs);
@@ -213,7 +213,7 @@ int* BFS(MPI_Comm comm, GraphStruct L_graph, int srcLid, int srcRank,int num_pro
 	/*****************************************************************/
 	int *d = (int *) malloc(sizeof(int)* L_graph.numVtxs);
 	memset(d, -1, sizeof(int) * L_graph.numVtxs);
-	ArrayList_t * FS = listCreate();	//vertices currently active
+	ArrayList_t * FS = listCreate();	// cac canh dang o vi tri duyet
 	if(srcRank == myRank){
 		d[srcLid] = 0;
 		listAppend(FS, srcLid);
@@ -222,8 +222,8 @@ int* BFS(MPI_Comm comm, GraphStruct L_graph, int srcLid, int srcRank,int num_pro
 	long ETPS = 0;
 	int numActiveVertices = 0;
 	do{
-		//visiting neighbouring vertices in parallel
-		ArrayList_t * NS = listCreate();	//vertices active in the next computation step
+		//duyet
+		ArrayList_t * NS = listCreate();	//cac canh o buoc tiep theo
 		for(i=0; i<FS->length; i++){
 			int lid = FS->data[i];
 			for(j=L_graph.nborIndex[lid]; j<L_graph.nborIndex[lid + 1]; j++){
@@ -247,14 +247,14 @@ int* BFS(MPI_Comm comm, GraphStruct L_graph, int srcLid, int srcRank,int num_pro
 		FS = NS;
 
 		MPI_Request request;
-		//sending newly visited nbors to their owners in parellel
+		//gui cac dinh duyet toi process chua dinh ay
 		for(i=0; i<num_procs; i++){
 			if(sendBuf[i]->length){
 				MPI_Isend(sendBuf[i]->data, sendBuf[i]->length, MPI_INT, i, 1, comm, &request);
 				MPI_Request_free(&request);
 			}
 		}
-		for(i=0; i<num_procs; i++){//rank i gather sendCount[i] from each rank
+		for(i=0; i<num_procs; i++){	// 
 			MPI_Gather(&(sendBuf[i]->length), 1, MPI_INT, recvCount, 1, MPI_INT, i, comm);
 		}
 		for(i=0; i<num_procs; i++){
@@ -264,7 +264,7 @@ int* BFS(MPI_Comm comm, GraphStruct L_graph, int srcLid, int srcRank,int num_pro
 			}
 		}
 
-		//handling newly visited vertices and compute the distance
+		// gan gia tri cho cai dinh da duyet
 		for(i=0; i<num_procs; i++){
 			for(j=0; j<recvCount[i]; j++){
 				int gid = recvBuf[i][j];
@@ -300,11 +300,17 @@ int* BFS(MPI_Comm comm, GraphStruct L_graph, int srcLid, int srcRank,int num_pro
 int main(int argc, char *argv[]){
 	MPI_Init(&argc, &argv);
 	MPI_Comm comm = MPI_COMM_WORLD;
-	char *fname = "graph.txt";
+	// char *fname = "graph.txt";
+	char *fname;
+	fname = argv[1];
 	int numParts;
 	MPI_Comm_size(comm, &numParts);
 	int myRank;
 	MPI_Comm_rank(comm, &myRank);
+
+	double time_distributed,time_bfs;
+
+
 	GraphStruct L_graph;
 printf("%d\n",myRank);
 
@@ -320,8 +326,9 @@ printf("%d\n",myRank);
 
 		partGraph(&G_graph,numParts);
 		printf(" partGraph done 153\n");
-
+		time_distributed = MPI_Wtime();
 		graphDistribute(comm,G_graph,&L_graph,numParts);
+		time_distributed = MPI_Wtime() - time_distributed;
 		printf(" graphDistribute done 155\n");
 
 		graphDeinit(&G_graph);
@@ -335,8 +342,14 @@ printf("%d\n",myRank);
  	srand(time(NULL));
 	int srcRank = rand() % numParts;
 	int srcLid = rand() % L_graph.numVtxs;
+	time_bfs = MPI_Wtime();
 	int *d = BFS(comm, L_graph, srcLid, srcRank,numParts);
+	time_bfs = MPI_Wtime() -time_bfs;
+	if (myRank == 0){
+	printf("time_distributed  %10.3lf milliseconds \n", time_distributed*1000);
 
+	printf("time_bfs  %10.3lf milliseconds \n", time_bfs*1000);
+	}
 	for(int i=0; i<L_graph.numVtxs; i++){
 		 printf("myRank = %d  d[%d] =  %d \n",myRank,i,d[i]);
 	}

@@ -15,8 +15,8 @@ typedef struct {
   int *nborProcs;
 } GraphStruct;
 void graphInit(GraphStruct *graph,int numVtxs,int numNbors){
-  graph->numVtxs = numVtxs;
-  graph->numNbors = numNbors;
+  graph->numVtxs = numVtxs;   // so luong cac canh
+  graph->numNbors = numNbors; //
   if(numVtxs>0){
     graph->vtxGIDs = (int *) malloc(sizeof(int)*numVtxs);
     graph->part = (int *) malloc(sizeof(int) * (numVtxs));
